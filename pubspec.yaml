@@ -1,0 +1,39 @@
+name: one_guntha
+description: 1Guntha real estate mobile app — MVP client for the Spring Boot API.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^2.6.1
+  dio: ^5.7.0
+  go_router: ^14.6.2
+  flutter_secure_storage: ^9.2.4
+  cached_network_image: ^3.4.1
+  google_fonts: ^6.2.1
+  intl: ^0.20.2
+  equatable: ^2.0.7
+  url_launcher: ^6.3.1
+  connectivity_plus: ^6.1.1
+  image_picker: ^1.1.2
+  flutter_html: ^3.0.0
+  webview_flutter: ^4.10.0
+  flutter_localizations:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  mocktail: ^1.0.4
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/1G_logo.png

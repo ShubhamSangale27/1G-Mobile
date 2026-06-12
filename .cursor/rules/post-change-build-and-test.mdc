@@ -1,0 +1,25 @@
+---
+description: After mobile app changes, build APKs and run all tests
+alwaysApply: true
+---
+
+# Post-change build & test (1G-Mobile)
+
+After implementing any change in `1G-Mobile/`, always run this full verification before finishing:
+
+```powershell
+Set-Location C:\Users\admin\Documents\1G\1G-Mobile
+. .\scripts\setup_env.ps1
+C:\Users\admin\Documents\flutter\bin\flutter.bat test
+powershell -ExecutionPolicy Bypass -File scripts\e2e_api_test.ps1
+C:\Users\admin\Documents\flutter\bin\flutter.bat build apk --debug
+C:\Users\admin\Documents\flutter\bin\flutter.bat build apk --release
+```
+
+Report pass/fail for unit tests, API E2E, debug APK, and signed release APK.
+
+## UI changes
+
+- Avoid fixed heights that clip content; prefer `LayoutBuilder`, `Flexible`, `maxLines`, and `TextOverflow.ellipsis`.
+- Never use `Expanded` inside scroll children without a bounded height parent.
+- Test layouts at narrow (~320dp) and tablet (~768dp) widths mentally or via widget tests.
