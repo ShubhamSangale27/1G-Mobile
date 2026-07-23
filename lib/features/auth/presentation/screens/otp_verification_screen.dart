@@ -215,7 +215,15 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              const Center(child: AppLogo(size: AppLogoSize.medium)),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                child: Center(
+                                  child: AppLogo(
+                                    size: AppLogoSize.medium,
+                                    maxWidth: 280,
+                                  ),
+                                ),
+                              ),
                               const SizedBox(height: 16),
                               Text(
                                 'Verify your mobile',

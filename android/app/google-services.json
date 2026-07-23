@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "91151538034",
+    "project_id": "one-guntha",
+    "storage_bucket": "one-guntha.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:91151538034:android:570514bdc9b4851c632feb",
+        "android_client_info": {
+          "package_name": "com.oneguntha.one_guntha"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA42pfXppz5V63WA3xg0Oaqzwvq-o2Z748"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

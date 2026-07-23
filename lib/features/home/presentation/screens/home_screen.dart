@@ -146,9 +146,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with AutomaticKeepAlive
             SliverAppBar(
               pinned: true,
               elevation: 0,
+              toolbarHeight: 60,
+              titleSpacing: 8,
               backgroundColor: AppColors.surface,
               foregroundColor: AppColors.textPrimary,
-              title: const AppLogo(size: AppLogoSize.compact),
+              title: const AppLogo(
+                size: AppLogoSize.compact,
+                maxHeight: 48,
+              ),
               actions: [
                 IconButton(
                   tooltip: 'Blog',

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../../config/route_paths.dart';
 import '../../../../core/error/error_mapper.dart';
+import '../../../../core/storage/local_profile_photo_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/validators.dart';
 import '../../../../core/auth/mobile_role_policy.dart';
@@ -27,15 +30,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   final _otpController = TextEditingController();
   final _newPasswordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+  final _deletePasswordController = TextEditingController();
 
   bool _loadingProfile = true;
   bool _savingProfile = false;
-  bool _uploadingPhoto = false;
+  bool _savingPhoto = false;
   bool _sendingOtp = false;
   bool _changingPassword = false;
-  String? _profileImageUrl;
+  bool _deletingAccount = false;
   String? _profileImagePreview;
+  String? _localPhotoPath;
   String? _passwordError;
+  String? _deleteError;
   String? _maskedMobile;
 
   @override
@@ -52,6 +58,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     _otpController.dispose();
     _newPasswordController.dispose();
     _confirmPasswordController.dispose();
+    _deletePasswordController.dispose();
     super.dispose();
   }
 
@@ -60,10 +67,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     try {
       final user = await ref.read(authControllerProvider.notifier).refreshProfile();
       _applyUser(user.fullName, user.email, user.mobile, user.profileImageUrl);
+      final localPath =
+          await ref.read(localProfilePhotoServiceProvider).getLocalPhotoPath(user.id);
+      if (mounted) setState(() => _localPhotoPath = localPath);
     } catch (_) {
       final user = ref.read(authControllerProvider).user;
       if (user != null) {
         _applyUser(user.fullName, user.email, user.mobile, user.profileImageUrl);
+        final localPath =
+            await ref.read(localProfilePhotoServiceProvider).getLocalPhotoPath(user.id);
+        if (mounted) setState(() => _localPhotoPath = localPath);
       }
     } finally {
       if (mounted) setState(() => _loadingProfile = false);
@@ -74,7 +87,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     _fullNameController.text = fullName;
     _emailController.text = email;
     _mobileController.text = mobile;
-    _profileImageUrl = imageUrl;
     _profileImagePreview = imageUrl != null
         ? ref.read(mediaUrlResolverProvider).resolvePropertyImageUrl(imageUrl)
         : null;
@@ -85,36 +97,53 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     return name.isNotEmpty ? name[0].toUpperCase() : '?';
   }
 
+  ImageProvider? get _avatarImage {
+    if (_localPhotoPath != null) {
+      return FileImage(File(_localPhotoPath!));
+    }
+    if (_profileImagePreview != null) {
+      return CachedNetworkImageProvider(_profileImagePreview!);
+    }
+    return null;
+  }
+
   Future<void> _pickPhoto() async {
+    final user = ref.read(currentUserProvider);
+    if (user == null) return;
+
     final picker = ImagePicker();
     final file = await picker.pickImage(source: ImageSource.gallery);
     if (file == null) return;
-    setState(() => _uploadingPhoto = true);
+
+    setState(() => _savingPhoto = true);
     try {
-      final url = await ref.read(propertyRepositoryProvider).uploadProfileImage(file.path);
+      final savedPath = await ref
+          .read(localProfilePhotoServiceProvider)
+          .saveLocalPhoto(user.id, file.path);
       if (!mounted) return;
       setState(() {
-        _profileImageUrl = url;
-        _profileImagePreview = ref.read(mediaUrlResolverProvider).resolvePropertyImageUrl(url);
-        _uploadingPhoto = false;
+        _localPhotoPath = savedPath;
+        _savingPhoto = false;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Photo uploaded. Save profile to apply.')),
+        const SnackBar(content: Text('Photo selected')),
       );
     } catch (e) {
       if (!mounted) return;
-      setState(() => _uploadingPhoto = false);
+      setState(() => _savingPhoto = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(ErrorMapper.toUserMessage(e))),
       );
     }
   }
 
-  void _removePhoto() {
-    setState(() {
-      _profileImageUrl = null;
-      _profileImagePreview = null;
-    });
+  Future<void> _removePhoto() async {
+    final user = ref.read(currentUserProvider);
+    if (user == null) return;
+
+    await ref.read(localProfilePhotoServiceProvider).removeLocalPhoto(user.id);
+    if (!mounted) return;
+    setState(() => _localPhotoPath = null);
   }
 
   Future<void> _saveProfile() async {
@@ -124,7 +153,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       final user = await ref.read(authRepositoryProvider).updateProfile(
             fullName: _fullNameController.text.trim(),
             email: _emailController.text.trim(),
-            profileImageUrl: _profileImageUrl,
           );
       await ref.read(authControllerProvider.notifier).updateUser(user);
       if (!mounted) return;
@@ -214,10 +242,63 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     context.go(RoutePaths.login);
   }
 
+  Future<void> _deleteAccount() async {
+    if (Validators.passwordReset(_deletePasswordController.text) != null) {
+      setState(() => _deleteError = 'Enter your password to confirm deletion');
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete account'),
+        content: const Text(
+          'Permanently delete your account and all associated data? This cannot be undone.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete account'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() {
+      _deletingAccount = true;
+      _deleteError = null;
+    });
+    try {
+      final userId = ref.read(authControllerProvider).user?.id;
+      await ref.read(authRepositoryProvider).deleteAccount(
+            password: _deletePasswordController.text,
+          );
+      if (userId != null) {
+        await ref.read(localProfilePhotoServiceProvider).removeLocalPhoto(userId);
+      }
+      if (!mounted) return;
+      await ref.read(authControllerProvider.notifier).logout();
+      if (!mounted) return;
+      context.go(RoutePaths.login);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Your account has been deleted.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _deleteError = ErrorMapper.toUserMessage(e));
+    } finally {
+      if (mounted) setState(() => _deletingAccount = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(currentUserProvider);
     final isAgent = MobileRolePolicy.isAgent(user?.role);
+    final avatarImage = _avatarImage;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -283,10 +364,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                               CircleAvatar(
                                 radius: 40,
                                 backgroundColor: AppColors.primary,
-                                backgroundImage: _profileImagePreview != null
-                                    ? CachedNetworkImageProvider(_profileImagePreview!)
-                                    : null,
-                                child: _profileImagePreview == null
+                                backgroundImage: avatarImage,
+                                child: avatarImage == null
                                     ? Text(_initials, style: const TextStyle(color: Colors.white, fontSize: 28))
                                     : null,
                               ),
@@ -295,10 +374,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   OutlinedButton(
-                                    onPressed: _uploadingPhoto ? null : _pickPhoto,
-                                    child: Text(_uploadingPhoto ? 'Uploading...' : 'Change photo'),
+                                    onPressed: _savingPhoto ? null : _pickPhoto,
+                                    child: Text(_savingPhoto ? 'Saving...' : 'Change photo'),
                                   ),
-                                  if (_profileImagePreview != null)
+                                  if (_localPhotoPath != null)
                                     TextButton(onPressed: _removePhoto, child: const Text('Remove')),
                                 ],
                               ),
@@ -389,6 +468,39 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         FilledButton(
                           onPressed: _changingPassword ? null : _changePassword,
                           child: Text(_changingPassword ? 'Updating...' : 'Update password'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Delete account', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.danger)),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Permanently delete your account and all associated data. This cannot be undone.',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppColors.textMuted),
+                        ),
+                        if (_deleteError != null) ...[
+                          const SizedBox(height: 8),
+                          Text(_deleteError!, style: const TextStyle(color: AppColors.danger)),
+                        ],
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: _deletePasswordController,
+                          decoration: const InputDecoration(labelText: 'Confirm your password'),
+                          obscureText: true,
+                        ),
+                        const SizedBox(height: 16),
+                        FilledButton(
+                          style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+                          onPressed: _deletingAccount ? null : _deleteAccount,
+                          child: Text(_deletingAccount ? 'Deleting...' : 'Delete my account'),
                         ),
                       ],
                     ),

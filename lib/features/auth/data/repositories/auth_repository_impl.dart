@@ -125,4 +125,9 @@ class AuthRepositoryImpl {
     await updateLocalUser(user);
     return user;
   }
+
+  Future<void> deleteAccount({required String password}) async {
+    await _remote.deleteAccount(password: password);
+    await clearSession();
+  }
 }

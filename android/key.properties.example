@@ -1,0 +1,13 @@
+# Copy to android/key.properties (gitignored) after placing the release keystore.
+# NEVER commit key.properties or the .jks file.
+#
+# Play Console expected upload certificate SHA1:
+#   C1:B0:27:47:A4:C7:1D:E3:99:77:3E:E6:BC:A6:33:5F:7C:67:86:0B
+#
+# Verify before upload:
+#   powershell -File scripts/verify_release_keystore.ps1
+
+storePassword=YOUR_STORE_PASSWORD
+keyPassword=YOUR_KEY_PASSWORD
+keyAlias=one-guntha
+storeFile=app/one-guntha-release.jks

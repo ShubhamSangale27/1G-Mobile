@@ -25,7 +25,8 @@ void main() {
     expect(File('android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml').existsSync(), isTrue);
   });
 
-  test('Brand logo asset is bundled', () {
-    expect(File('assets/images/1G_logo.png').existsSync(), isTrue);
+  test('Brand logo assets are bundled', () {
+    expect(File('assets/images/1G_logo_full.png').existsSync(), isTrue);
+    expect(File('assets/images/1G_logo_icon.png').existsSync(), isTrue);
   });
 }

@@ -150,6 +150,14 @@ class AuthRemoteDatasource {
     }
   }
 
+  Future<void> deleteAccount({required String password}) async {
+    try {
+      await _dio.delete('/users/me', data: {'password': password});
+    } on DioException catch (e) {
+      throw ErrorMapper.fromDio(e);
+    }
+  }
+
   AuthSession _parseAuth(Map<String, dynamic> data) => AuthSession(
         accessToken: data['accessToken'] as String,
         refreshToken: data['refreshToken'] as String,

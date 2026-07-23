@@ -28,6 +28,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   int _myPropertiesCount = 0;
   bool _loadingVisits = true;
   bool _loadingProperties = true;
+  bool _loadingAlerts = true;
+  String? _dashboardError;
   bool _sendingEmailVerification = false;
   int? _rescheduleVisitId;
   DateTime? _rescheduleDateTime;
@@ -40,6 +42,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 
   Future<void> _loadAll() async {
+    setState(() => _dashboardError = null);
     await Future.wait([
       _loadVisits(),
       _loadRecentProperties(),
@@ -56,9 +59,12 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         _visits = visits;
         _loadingVisits = false;
       });
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
-      setState(() => _loadingVisits = false);
+      setState(() {
+        _loadingVisits = false;
+        _dashboardError ??= ErrorMapper.toUserMessage(e);
+      });
     }
   }
 
@@ -72,18 +78,31 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         _myPropertiesCount = result.totalElements;
         _loadingProperties = false;
       });
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
-      setState(() => _loadingProperties = false);
+      setState(() {
+        _loadingProperties = false;
+        _dashboardError ??= ErrorMapper.toUserMessage(e);
+      });
     }
   }
 
   Future<void> _loadAlerts() async {
+    setState(() => _loadingAlerts = true);
     try {
       final alerts = await ref.read(propertyRepositoryProvider).getAlerts(page: 0, size: 10);
       if (!mounted) return;
-      setState(() => _alerts = alerts);
-    } catch (_) {}
+      setState(() {
+        _alerts = alerts;
+        _loadingAlerts = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadingAlerts = false;
+        _dashboardError ??= ErrorMapper.toUserMessage(e);
+      });
+    }
   }
 
   int get _unreadAlerts => _alerts.where((a) => !a.read).length;
@@ -207,6 +226,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.textMuted),
             ),
             const SizedBox(height: 16),
+            if (_dashboardError != null) ...[
+              ErrorView(message: _dashboardError!, onRetry: _loadAll),
+              const SizedBox(height: 16),
+            ],
             if (user != null && !user.emailVerified) ...[
               Card(
                 color: AppColors.warning.withValues(alpha: 0.1),
