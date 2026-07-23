@@ -79,88 +79,81 @@ if ($blogs.content.Count -gt 0) {
     Assert-True ($detail.slug -eq $slug) "Blog detail by slug loads"
 }
 
-# Market stats (public projector cascade)
+# Market stats (static state/city + admin localities + benchmark fallback)
 Write-Host "`n--- Market stats / growth projector ---" -ForegroundColor Cyan
-$states = Invoke-RestMethod -Uri "$base/market-stats/areas?level=STATE"
-Assert-True ($null -ne $states) "Public market states list loads"
-Assert-True ($states.Count -ge 0) "Market states response is an array"
+$testState = "Maharashtra"
+$testCity = "Mumbai"
+$localities = Invoke-RestMethod -Uri "$base/market-stats/areas?state=$([uri]::EscapeDataString($testState))&city=$([uri]::EscapeDataString($testCity))&level=LOCALITY"
+Assert-True ($null -ne $localities) "Localities list for static state/city loads"
 
-if ($states.Count -gt 0) {
-    $stateId = $states[0].id
-    $stateName = $states[0].name
-    Assert-True ($stateId -gt 0) "First state has valid id ($stateName)"
+$cityStats = Invoke-RestMethod -Uri "$base/market-stats?state=$([uri]::EscapeDataString($testState))&city=$([uri]::EscapeDataString($testCity))&range=5Y"
+Assert-True ($null -ne $cityStats.derivedCagrPct) "City benchmark CAGR returned for Mumbai"
+Assert-True ($cityStats.message -match "market average") "City benchmark message present"
 
-    $cities = Invoke-RestMethod -Uri "$base/market-stats/areas?parentId=$stateId&level=CITY"
-    Assert-True ($null -ne $cities) "Cities cascade by parentId for state $stateName"
+$projBody = @{
+    state = $testState
+    city = $testCity
+    range = "5Y"
+    initialAmount = 2500000
+    monthlyContribution = 25000
+    years = 10
+    expectedRatePct = 8.5
+} | ConvertTo-Json
+$proj = Invoke-RestMethod -Uri "$base/market-stats/projection" -Method POST -ContentType "application/json" -Body $projBody
+Assert-True ($proj.points.Count -gt 0) "City-level projection returns chart points"
+Assert-True ($proj.regionalFinal -gt 0) "Projection regionalFinal is positive"
 
-    if ($cities.Count -gt 0) {
-        $cityId = $cities[0].id
-        $cityName = $cities[0].name
-        $localities = Invoke-RestMethod -Uri "$base/market-stats/areas?parentId=$cityId&level=LOCALITY"
-        Assert-True ($null -ne $localities) "Localities cascade by parentId for city $cityName"
-
-        $areaId = if ($localities.Count -gt 0) { $localities[0].id } else { $cityId }
-        $stats = Invoke-RestMethod -Uri "$base/market-stats?areaId=$areaId&range=5Y"
-        Assert-True ($null -ne $stats.area) "Market stats load for area $areaId"
-        Assert-True ($null -ne $stats.derivedCagrPct) "Derived CAGR present for area $areaId"
-
-        $projBody = @{
-            areaId = $areaId
-            range = "5Y"
-            initialAmount = 2500000
-            monthlyContribution = 25000
-            years = 10
-            expectedRatePct = 8.5
-        } | ConvertTo-Json
-        $proj = Invoke-RestMethod -Uri "$base/market-stats/projection" -Method POST -ContentType "application/json" -Body $projBody
-        Assert-True ($proj.points.Count -gt 0) "Projection returns chart points"
-        Assert-True ($proj.regionalFinal -gt 0) "Projection regionalFinal is positive"
-        Assert-True ($proj.userFinal -gt 0) "Projection userFinal is positive"
-    } else {
-        Write-Host "[SKIP] No cities for state $stateName — add cities in admin" -ForegroundColor Yellow
-    }
-} else {
-    Write-Host "[SKIP] No states configured — admin can import RBI seed or add areas" -ForegroundColor Yellow
+if ($localities.Count -gt 0) {
+    $locId = $localities[0].id
+    $locProjBody = @{
+        state = $testState
+        city = $testCity
+        localityId = $locId
+        range = "5Y"
+        initialAmount = 2500000
+        monthlyContribution = 25000
+        years = 10
+        expectedRatePct = 8.5
+    } | ConvertTo-Json
+    $locProj = Invoke-RestMethod -Uri "$base/market-stats/projection" -Method POST -ContentType "application/json" -Body $locProjBody
+    Assert-True ($locProj.points.Count -gt 0) "Locality projection returns chart points"
 }
 
-# Admin market stats (create + public visibility)
+# Admin market stats (locality-only CRUD)
 Write-Host "`n--- Admin market stats CRUD ---" -ForegroundColor Cyan
 $adminHeaders = @{ Authorization = "Bearer $($admin.accessToken)" }
-$testStateName = "E2E Test State $(Get-Random -Maximum 99999)"
-$createStateBody = @{
-    level = "STATE"
-    name = $testStateName
+$testLocName = "E2E Locality $(Get-Random -Maximum 99999)"
+$createLocBody = @{
+    level = "LOCALITY"
+    name = $testLocName
+    stateName = "Goa"
+    cityName = "Panaji"
     active = $true
     sortOrder = 999
 } | ConvertTo-Json
 try {
-    $createdState = Invoke-RestMethod -Uri "$base/admin/market-stats/areas" -Method POST -Headers $adminHeaders -ContentType "application/json" -Body $createStateBody
-    Assert-True ($createdState.name -eq $testStateName) "Admin can create market state"
-    Assert-True ($createdState.id -gt 0) "Created state has id"
+    $createdLoc = Invoke-RestMethod -Uri "$base/admin/market-stats/areas" -Method POST -Headers $adminHeaders -ContentType "application/json" -Body $createLocBody
+    Assert-True ($createdLoc.name -eq $testLocName) "Admin can create locality"
+    Assert-True ($createdLoc.level -eq "LOCALITY") "Created area is LOCALITY"
 
-    $publicStates = Invoke-RestMethod -Uri "$base/market-stats/areas?level=STATE"
-    $found = @($publicStates | Where-Object { $_.name -eq $testStateName }).Count -gt 0
-    Assert-True $found "Admin-created state visible on public API"
+    $publicLocs = Invoke-RestMethod -Uri "$base/market-stats/areas?state=Goa&city=Panaji&level=LOCALITY"
+    $found = @($publicLocs | Where-Object { $_.name -eq $testLocName }).Count -gt 0
+    Assert-True $found "Admin-created locality visible on public API"
 
-    $createCityBody = @{
-        level = "CITY"
-        name = "E2E Test City"
-        parentId = $createdState.id
-        active = $true
-    } | ConvertTo-Json
-    $createdCity = Invoke-RestMethod -Uri "$base/admin/market-stats/areas" -Method POST -Headers $adminHeaders -ContentType "application/json" -Body $createCityBody
-    Assert-True ($createdCity.stateName -eq $testStateName) "City inherits stateName from parent"
-
-    $publicCities = Invoke-RestMethod -Uri "$base/market-stats/areas?parentId=$($createdState.id)&level=CITY"
-    $cityFound = @($publicCities | Where-Object { $_.name -eq "E2E Test City" }).Count -gt 0
-    Assert-True $cityFound "Admin-created city visible via parentId cascade"
-
-    Invoke-RestMethod -Uri "$base/admin/market-stats/areas/$($createdCity.id)" -Method DELETE -Headers $adminHeaders | Out-Null
-    Invoke-RestMethod -Uri "$base/admin/market-stats/areas/$($createdState.id)" -Method DELETE -Headers $adminHeaders | Out-Null
-    Assert-True $true "Admin cleanup of test areas succeeded"
+    Invoke-RestMethod -Uri "$base/admin/market-stats/areas/$($createdLoc.id)" -Method DELETE -Headers $adminHeaders | Out-Null
+    Assert-True $true "Admin cleanup of test locality succeeded"
 } catch {
     Write-Host "[FAIL] Admin market stats CRUD: $($_.Exception.Message)" -ForegroundColor Red
     $script:failed++
+}
+
+try {
+    $badBody = @{ level = "STATE"; name = "Bad"; active = $true } | ConvertTo-Json
+    Invoke-RestMethod -Uri "$base/admin/market-stats/areas" -Method POST -Headers $adminHeaders -ContentType "application/json" -Body $badBody | Out-Null
+    Assert-True $false "Admin should not create STATE areas"
+} catch {
+    $code = $_.Exception.Response.StatusCode.value__
+    Assert-True ($code -eq 400) "Creating STATE area rejected (HTTP $code)"
 }
 
 Write-Host "`n=== Results: $passed passed, $failed failed ===`n" -ForegroundColor Cyan
